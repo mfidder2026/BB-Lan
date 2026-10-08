@@ -136,6 +136,11 @@ net_tick:
         bne     :+
         jsr     net_checksum
 :
+.ifdef NET_WIC                          ; WiC64: send every other tick (each
+        lda     bb_tick                 ; packet carries 8 inputs anyway)
+        lsr     a
+        bcs     @sent
+.endif
 .ifdef HALT_AT                          ; debug: stop before this tick
         lda     bb_tick
         cmp     #<HALT_AT
@@ -147,6 +152,7 @@ net_tick:
 :
 .endif
         jsr     send_input
+@sent:
 
         lda     #0
         sta     ls_wait
@@ -157,12 +163,12 @@ net_tick:
 .endif
 @wait:  lda     bb_rframe
         sta     ls_rf
-@poll:  jsr     net_poll                ; may end the session (no return)
-        lda     ls_rnew                 ; the other's input for this tick?
-        cmp     bb_tick
-        lda     ls_rnew+1
+@poll:  lda     ls_rnew                 ; the other's input for this tick?
+        cmp     bb_tick                 ; (only poll when it is missing:
+        lda     ls_rnew+1               ; a WiC64 poll costs frames)
         sbc     bb_tick+1
         bcs     @ready
+        jsr     net_poll                ; may end the session (no return)
         lda     bb_rframe
         cmp     ls_rf
         beq     @poll
@@ -418,12 +424,16 @@ bb_end:
         ldy     #>tx_buf
         jsr     drv_send
         jsr     drv_flush
-        pla
-        sei
+        sei                             ; (the reason stays on the stack)
         ldx     #$37                    ; KERNAL, BASIC and I/O back
         stx     R6510
-        ldx     #$FF
-        txs
+        lda     #0
+        sta     $D01A                   ; no raster IRQ (the lobby hides the sprites)
+        jsr     $FF84                   ; IOINIT    as a KERNAL reset does it
+        jsr     $FF87                   ; RAMTAS    (clears pages 0, 2 and 3)
+        jsr     $FF8A                   ; RESTOR
+        jsr     $FF81                   ; CINT
+        pla
         sta     $033E                   ; result for the lobby: "BR", reason, socket
         lda     #'B'
         sta     $033C
@@ -431,11 +441,6 @@ bb_end:
         sta     $033D
         lda     bb_hb+HB_SOCKET
         sta     $033F
-        lda     #0
-        sta     $D01A                   ; no raster IRQ (the lobby hides the sprites)
-        jsr     $FF84                   ; IOINIT
-        jsr     $FF8A                   ; RESTOR
-        jsr     $FF81                   ; CINT
         cli
         lda     #1
         ldx     bb_hb+HB_DEVICE
@@ -583,11 +588,13 @@ drv_poll:
         bne     :-
 :       lda     UCI_CTRL
         and     #UCI_STATE
+        beq     :+                      ; idle: nothing to acknowledge
         tay
         lda     #UCI_ACC
         sta     UCI_CTRL
         cpy     #UCI_MORE
         beq     @data
+:
         lda     uci_state
         ldy     #0
         sty     uci_state
@@ -598,6 +605,7 @@ drv_poll:
         lda     uci_rx+1
         bne     @none                   ; $FFFF = nothing
         lda     uci_rx
+        beq     @none                   ; 0 bytes
         clc
         rts
 @none:  sec

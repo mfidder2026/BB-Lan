@@ -1,309 +1,256 @@
-# Technical Documentation
+# BB-LAN technical description
 
-Detailed technical documentation for the Bubble Bobble C64 reverse engineering project.
+This document explains how BB-LAN turns the C64 Bubble Bobble into a
+lockstep network game, and what was learned on the way. It is meant for
+people who want to change the code or reuse the approach for another game.
 
-## Memory Map
+## Overview
 
 ```
-$0400-$07FF  Game variables, score data, player state
-$0800-$0FFF  Game logic: main loop, collision detection, enemy AI
-$1000-$1FFF  Level handling, bubble mechanics
-$2000-$3FFF  Graphics routines, screen updates
-$4000-$47FF  Character set (fonts, shadows, fire/water animations)
-$4800-$57FF  Screen buffers, sprite pointers
-$5800-$5FFF  Sprite data block 1 (player, enemies)
-$6000-$7FFF  Level data and game code
-$7440-$7FFF  Additional sprite data (player in bubble, boss sprites)
-$8000-$8FFF  Character data (bubble animations, Baron Von Blubba)
-$8F00-$9FFF  Character data continued (special bubbles, items, weapons)
-$A000-$AFFF  Sprite data (bonus items), item/monster data tables
-$B000-$CFFF  Level/graphics data tables (platforms, bitmaps, metadata)
-$D000-$DFFF  (I/O area - banked out when needed)
-$E000-$EFFF  Game routines, input handling
-$F000-$FFFF  Sound/music routines, IRQ handlers
+ C64 #1 (Bub)                     game server (C#, .NET 8)              C64 #2 (Bob)
+┌──────────────────┐            ┌─────────────────────────┐           ┌──────────────────┐
+│ lobby (BBLAN)     │  lobby,    │ lobby, invitations,     │  lobby,   │ lobby (BBLAN)     │
+│   ↓ START         │  START     │ sessions, dashboard     │  START    │   ↓ START         │
+│ game (BBU/W/R)    │◄──────────►│ Bubble Bobble module:   │◄─────────►│ game (BBU/W/R)    │
+│ full simulation   │   INPUT    │  seed, input delay,     │   INPUT   │ full simulation   │
+│ in lockstep       │  25 Hz     │  relay, checksums       │  25 Hz    │ in lockstep       │
+└──────────────────┘            └─────────────────────────┘           └──────────────────┘
+   UDP (Ultimate) · TCP (WiC64) · raw Ethernet (VICE RR-Net)
 ```
 
-## Source File Organization
+- **Lobby** (`lobby/`, C with cc65):
+  - finds the network hardware;
+  - talks to the server until a session starts;
+  - writes a handoff block to `$03C0` and loads the game file for its network type.
+- **Game** (`src/`): the reconstructed original with:
+  - a deterministic tick core (`bblan.s`);
+  - the network code (`bbnet.s`).
+- **Server** (`server/`): relays the inputs, compares checksums and handles timeouts. It is not authoritative: it does not know the game.
 
-| Address Range | File | Description |
-|---------------|------|-------------|
-| $0400-$078B | master.s | Game variables, player state, IRQ handler |
-| $078C-$08E3 | sprites-init.s | Sprite management, game initialization |
-| $08E4-$0AAA | game-loop.s | Game start sequence, main loop |
-| $0AAB-$0CF1 | collision.s | Collision detection, enemy spawning |
-| $0CF2-$10D2 | enemy-ai.s | Enemy AI update and movement |
-| $10D3-$12FF | special-enemies.s | Special enemy behaviors |
-| $1300-$1577 | player-sprites.s | Player sprite updates |
-| $1578-$1804 | bubbles-sprites.s | Bubble physics and capture |
-| $1805-$1A6E | render-screen.s | Screen rendering |
-| $1A6F-$1CA0 | level-complete.s | Level completion handling |
-| $1CA1-$1E2D | joystick-input.s | Input handling |
-| $1E2E-$2161 | player-animation.s | Player animation |
-| $2162-$272E | entity-interaction.s | Entity interactions |
-| $272F-$2899 | player-movement.s | Player movement |
-| $289A-$29BB | spawn-handlers.s | Spawn point management |
-| $29BC-$2A3E | item-collision.s | Item pickup collision |
-| $2A3F-$2B30 | super-bonus.s | Super bonus handling |
-| $2B31-$2D64 | level-setup.s | Level initialization |
-| $2D65-$2F5E | special-item-effects.s | Special item effects |
-| $2F5F-$2FAB | level-transition.s | Level transitions |
-| $2FAC-$3168 | level-start.s | Level start sequence |
-| $3169-$32C0 | platform-collision.s | Platform collision |
-| $32C1-$3489 | extend-bonus.s | EXTEND bonus system |
-| $348A-$35AF | bonus-round.s | Bonus round handling |
-| $35B0-$37C6 | bonus-stage-extended.s | Extended bonus stages |
-| $37C7-$39D1 | level-display.s | Level number display |
-| $39D2-$3AB7 | entity-spawn.s | Entity spawning |
-| $3AB8-$3C00 | screen-scroll.s | Screen scrolling |
-| $3C01-$3CB1 | graphics-copy.s | Graphics copying |
-| $3CB2-$3D2C | entity-state-tables.s | Entity state tables |
-| $3D2D-$3DB0 | entity-collision.s | Entity collision |
-| $3DB0-$3E76 | bubble-handler.s | Bubble state handler |
-| $3E77-$3FAF | sprite-init.s | Sprite initialization |
-| $3FB0-$3FFF | sprite-helpers.s | Sprite helper routines |
-| $4800-$48FF | init-routines.s | System initialization |
-| $4900-$4AFF | loader.s | Tape/disk loader |
-| $E000-$E3A6 | level-renderer.s | Level rendering |
-| $E3A7-$E553 | sprites-display.s | Sprite display |
-| $E554-$E751 | line-draw.s | Line drawing |
-| $E752-$E9FC | sprite-composer.s | Sprite composition |
-| $E9FD-$EC0B | entity-bubble-handler.s | Bubble physics |
-| $EC0C-$EDC6 | entity-movement.s | Entity movement |
-| $EDC7-$EFBB | entity-ai.s | Entity AI |
-| $EFBC-$F0ED | entity-physics-cont.s | Entity physics |
-| $F0EE-$F1AB | title-screen-data.s | Title screen text |
-| $F1AC-$F23F | credits-handler-partial.s | Credits handler |
-| $F2C4-$F39B | music-sound-data.s | Sound data tables |
-| $F4BC-$F8FF | sound-engine.s | SID sound engine |
-| $FE00-$FFFA | final-data.s | Final data section |
+## 1. The source
 
-## Key Routines
+The game is built from [rebb64](https://github.com/zaidka/rebb64), a reconstruction of the C64 version in ca65 assembly:
 
-### Core Game Loop
+- `python tools/build.py verify` still produces the original byte for byte.
+- All BB-LAN changes are in `.ifdef BBLAN` blocks.
 
-| Address | Label | Description |
-|---------|-------|-------------|
-| $045C | `check_player_state` | Handles death, respawn, game over |
-| $052A | `check_join_game` | Detects fire button to join game |
-| $06AB | `irq_frame_update` | Raster IRQ - timers, frame counter |
-| $0A07 | `main_game_loop` | Main game loop entry point |
+### Rule 1: no byte of the original may move
 
-### Enemy System
+The first version of the changes made some routines longer or shorter. Everything behind them moved, and the game broke in subtle ways:
 
-| Address | Label | Description |
-|---------|-------|-------------|
-| $0BED | `enemy_spawn_handler` | Spawns new enemies |
-| $0CF2 | `enemy_ai_update` | Enemy AI and movement |
-| $EA20 | `check_entity_trapped` | Check if entity trapped between platforms |
-| $EA92 | `climb_descend_decision` | Determine vertical movement direction |
+- After a few minutes an enemy got an invalid type.
+- The entity dispatch jumped through a vector behind the end of its table into random code.
+- That code drew into the zero page, which corrupted the sound player's stack index and crashed the C64 around level 9 or 13.
 
-### Player & Input
+A reference build that keeps the original layout (`ORIGLAYOUT`) did not crash with the same bot. The reconstructed source still contains absolute references that the assembler does not know about.
 
-| Address | Label | Description |
-|---------|-------|-------------|
-| $1319 | `update_player_sprites` | Player sprite animation |
-| $1805 | `update_sprite_positions` | Sprite multiplexer |
-| $1844 | `update_player_input` | Joystick reading, player control |
-| $7EB3 | `read_joystick_keyboard` | Input polling |
+So now:
 
-### Bubble Physics
+- Every patch replaces original code with code of **at most the same size**. The `BB_PATCH_END` macro pads with NOPs.
+- New code goes into the segment `BBLAN_CODE`.
+- `tools/build.py` compares every original segment with `tools/original-layout.json` and refuses to build when one moved.
 
-| Address | Label | Description |
-|---------|-------|-------------|
-| $1578 | `update_bubbles` | Bubble physics and capture |
-| $E9FD | `entity_bubble_handler` | Main bubble physics dispatcher |
-| $EB3F | `setup_bubble_ascent` | Configure bubble upward movement |
-| $EBD9 | `platform_climbing_physics` | Platform descent state machine |
+### Memory
 
-### Graphics & Rendering
+RAM is full in the original. The room for BB-LAN comes from compressing the level bitmaps (an option of rebb64):
 
-| Address | Label | Description |
-|---------|-------|-------------|
-| $E000 | `setup_level_screen` | Level initialization & rendering |
-| $E18B | `decompress_level_data` | RLE level data decompression |
-| $E3A7 | `update_sprite_animations` | Sprite animations & high score |
-| $E42A | `display_text_string` | Text display with control codes |
-| $E494 | `wait_one_frame` | Frame sync (critical timing) |
-| $E554 | `draw_animated_sprite` | Motion trail effects |
-| $E5C4 | `draw_bresenham_line` | Bresenham line algorithm |
-| $E752 | `sprite_composition` | Multi-layer sprite composition |
-| $E90E | `render_all_entities` | Entity rendering loop (18 entities) |
+- the compressed bitmaps fill the RAM under the I/O area;
+- `build.py` chooses the split so the I/O shadow is exactly full;
+- that frees about 1.3 KB in normal RAM (`$C5F2-$CB1C`) for `BBLAN_CODE`.
 
-### Sound System
+Each network driver gets its own game file, so only one is in memory:
 
-| Address | Label | Description |
-|---------|-------|-------------|
-| $F4BC | `sound_init` | Sound initialization |
-| $F53C | `update_music` | SID music player |
-| $F887 | `music_mode_init` | Music/mode initialization |
+| Build | BBLAN_CODE used | Free |
+|---|---|---|
+| RR-Net | 1321 bytes | 2 |
+| Ultimate | 1297 bytes | 26 |
+| WiC64 | 1286 bytes | 37 |
 
-### Scoring
+Small buffers live in unused stack page bytes:
 
-| Address | Label | Description |
-|---------|-------|-------------|
-| $7C26 | `scoring` | BCD score calculation |
-| $E97F | `score_update_bcd` | BCD score addition for pickups |
+- the input rings at `$0128-$0147`;
+- the game itself uses `$0100`, `$0107-$0126` and `$014B-$01A6`.
 
-## Entity Data Arrays
+## 2. Deterministic game time (`src/bblan.s`)
 
-The game uses parallel arrays indexed by entity slot (0-17):
+In the original, part of the game logic runs in the raster interrupt:
 
-| Address | Description |
-|---------|-------------|
-| $85E8,x | Entity state bit flags |
-| $8610,x | Animation frame counter |
-| $8520,x | Current sprite frame index |
-| $8688,x | Invincibility timer |
-| $8700,x | Movement/bubble state |
-| $8750,x | Target direction / frame limit |
-| $8778,x | Animation mask value |
-| $87A0,x | Platform climbing state counter |
-| $87C8,x | Secondary collision flags |
-| $87F0,x | Vertical collision state |
-| $8818,x | Animation frame data (bit 7 = bubble active) |
-| $8840,x | Horizontal velocity |
-| $8868,x | Secondary velocity |
-| $86D8,x | Collision data |
-| $B2,x | Entity type/state (ENESSION) |
-| $BA,x | Entity X position (FA) |
-| $C2,x | Entity Y position |
+- the frame counter;
+- the second and hurry-up timers;
+- on every odd frame, the player/sprite state machine `D_1CBD`.
 
-## Technical Details
+The main loop runs the rest at 25 Hz. How the two interleave depends on how long the main loop takes, so two C64s would compute different games.
 
-### Frame Timing
+BB-LAN makes game time **virtual**:
 
-The game runs at 25fps (PAL), achieved by skipping every other frame:
-- IRQ handler at $06AB increments frame counter ($08)
-- Sprite updates only run on odd frames (AND #$01 check)
-- Sound updates run every frame
+- The IRQ only counts real frames (`bb_rframe`) and keeps doing display and sound.
+- Every place where the game waited for the frame counter now calls `vframe`, which runs exactly one logical frame:
+  - the timers;
+  - the frame counter `$08`;
+  - on odd frames, what the IRQ used to do (`D_1805`, `D_1B40`, `D_1CBD`).
+- `vframe` is paced against real frames and may catch up up to 4 frames.
+  - The game keeps its speed: measured 3.09 real frames per main loop pass, the original 3.01.
+  - The sequence of logic no longer depends on time.
 
-### Graphics Data Tables
+**One tick = one odd logical frame (25 Hz).** At every tick `bb_sample` provides the input of both players:
 
-#### Sprite Data Locations
+- `bb_in0`/`bb_in1`: the joystick bytes, as `$DC00`/`$DC01` would read;
+- `bb_key`: the keyboard row 7 that pause/quit/title read.
 
-| Address | Description | Count | Size |
-|---------|-------------|-------|------|
-| $5800 | Sprite data block 1 (Player, enemies) | Variable | 2KB |
-| $7440 | Player in bubble A | 4 sprites | 256 bytes |
-| $7540 | Player in bubble B | 4 sprites | 256 bytes |
-| $7640 | Boss facing left | 9 sprites | 576 bytes |
-| $7880 | Boss in bubble | 9 sprites | 576 bytes |
-| $7C40 | Boss facing right | 9 sprites | 576 bytes |
-| $8000 | Sprite data block 2 | Variable | 8KB |
-| $A320 | Bonus cupcake | 4 sprites | 256 bytes |
-| $A420 | Bonus melon (partial) | 3 sprites | 192 bytes |
-| $A520 | Bonus diamond | 2 sprites | 128 bytes |
+All game code reads input from there.
 
-#### Character Set Data Locations
+Other things that had to change:
 
-| Address | Description |
-|---------|-------------|
-| $4000 | Numeric font (charset base) |
-| $4050 | Shadows (6 chars × 8 bytes) |
-| $4080 | Fatneck font |
-| $40E0 | Fire on ground A |
-| $40E8 | Life dot lines font |
-| $40F8 | Flowing water animation |
-| $4108 | Alpha font |
-| $41D8 | Punctuation font |
-| $4200 | Fire on ground |
-| $4210 | Ruddy "HELLO THERE" font |
-| $8000 | Bubble blow animation |
-| $8980 | Bubble pop animation |
-| $8F00 | Baron Von Blubba (main block start) |
+- the random generator no longer mixes in a CIA timer;
+- the seed and the frame/tick counters are set when a game starts;
+- starting a song and initialising the sound from the main program now run with the IRQ held off (they used to run inside the IRQ).
 
-### Level Data Format
+### Same start on both machines
 
-Level data uses bit-packed compression:
-- Each bit determines tile placement (1 = platform, 0 = empty)
-- RLE encoding for repeated patterns
-- Optional horizontal mirroring (left half copied to right)
-- Symmetry flag in $FF94 (bit 7): 0 = symmetric, 1 = asymmetric
+A game that starts after an earlier game does not start from the same state as a freshly loaded one: entity tables, buffers and the sound state differ. BB-LAN therefore starts every session from a **freshly loaded game file**:
 
-### Sprite System
+- the lobby loads it;
+- the unpacker clears the part of the stack page the game uses for tables;
+- after the game, the lobby is loaded again.
 
-- 8 hardware sprites multiplexed for more on-screen
-- Double-buffered screen updates
-- Multi-layer sprite composition with AND/OR masking
-- Self-modifying code for dynamic sprite pointers
+## 3. Lockstep (`src/bbnet.s`)
 
-### Sound Engine
+At tick `t` each C64:
 
-- 3-channel SID music using custom player
-- Separate sound effect system
-- Music data in pattern-based format
-- Note frequency lookup tables for pitch
+1. **Reads its own joystick** (port 2) and the keys `C=` (pause) and `Q` (quit), and stores the result as the input for tick `t + delay`.
+2. **Sends an INPUT message** with the newest 8 inputs. Each message repeats the last 8, so a lost message costs nothing.
+3. **Waits until the other player's input for tick `t` is there.**
+   - Only then does it poll the network.
+   - While waiting it resends every real frame.
+   - It gives up after 10 s, or after 120 s at the start while the other C64 is still loading.
+4. **Runs the tick:**
+   - slot 0 drives Bub, slot 1 drives Bob;
+   - the keys of both players are combined, so a pause or quit happens on both machines.
 
-### PRNG (Random Number Generator)
+Every 64 ticks a Fletcher-16 checksum goes along in the INPUT message. It covers the level, the random generator, the timers, the entity state, the scores and the lives. The server compares the two checksums and ends the session with *desync* when they differ.
 
-Located at $E9EA:
-- 16-bit XOR-shift-rotate pattern
-- Incorporates CIA timer ($DC06) for entropy
-- State stored in zero-page ($26/$27)
+```
+INPUT, 16 bytes:
+  $80, session, newest tick (16 bit), checksum tick (16 bit, $FFFF = none),
+  checksum (16 bit), 8 inputs for ticks newest-7 .. newest
+input byte: bits 0-4 joystick (active low, as $DC00),
+            bit 5 C= (pause), bit 6 Q (quit)
+```
 
-### BCD Score System
+### Handoff block (lobby → game), at `$03C0`
 
-Uses 6502 decimal mode (SED) for proper score display:
-- Multi-byte addition with carry propagation
-- Digits stored as BCD (e.g., $09 + $01 = $10, not $0A)
+| Offset | Contents |
+|---|---|
+| 0-1 | `BL` (valid block) |
+| 2 | driver: 0 local, 1 Ultimate, 2 RR-Net, 3 WiC64 |
+| 3 | slot (0 = Bub) |
+| 4 | session id |
+| 5-6 | seed |
+| 7 | input delay |
+| 8 | UCI socket |
+| 9 | flags (bit 0: test bot) |
+| 10 | drive number (to load the lobby again) |
+| 12-17 | RR-Net: the server's MAC |
+| 18-23 | RR-Net: our MAC |
 
-## Self-Modifying Code Locations
+The unpacker copies the block into the game (`bb_hb`) and clears the marker. Without a valid block the game runs locally with two joysticks. After the game, `bb_end`:
 
-The game uses extensive self-modification for optimization:
+1. resets the C64 to KERNAL state;
+2. leaves the result for the lobby at `$033C`: `BR`, reason, UCI socket;
+3. loads `BBLAN`.
 
-| Address | Purpose |
-|---------|---------|
-| $E849-$E861 | Sprite graphics pointers (6 pairs) |
-| $E966 | Sprite frame offset |
-| $EB94 | JMP/BIT toggle for control flow |
-| $EBB5-$EBB6 | Dynamic jump target |
+### Network drivers
 
-## Text Control Codes
+**Ultimate** (Ultimate Command Interface, `$DF1C-$DF1F`):
 
-The text rendering system at $E42A supports:
-- `$00` = End of string
-- `$01-$0F` = Direct character codes
-- `$1F xx yy` = Set cursor position
-- `$20+` = Standard characters
+- UDP through the socket the lobby opened.
+- One command at a time: a read is pending whenever nothing is sent, and a send waits for the read.
+- Same rules as the WoW-LAN driver: never read-modify-write `$DF1C`, reads of at most 48 bytes.
 
-## Data Tables in ROM
+**WiC64** (firmware 2.x):
 
-### Level Data Tables
+- Requests `"R", command, length(16), data`; the answer is `status, length(16), data`.
+- Every byte is confirmed with FLAG2 (`$DD0D` bit 4). PA2 sets the direction.
+- TCP to the server; the stream carries `[length][message]`.
+- The driver hands every completed message in a transfer to the lockstep, because several can arrive at once.
+- A WiC64 transfer costs the C64 time (about 1 frame per send and 2-3 per poll in VICE's emulation). So:
+  - a WiC64 sends every other tick;
+  - the server uses an input delay of 4 when a WiC64 takes part.
 
-| Address | Description | Length |
-|---------|-------------|--------|
-| $AE51 | Monster spawn data | 1,815 bytes (572 monsters × 3 bytes + stop bytes) |
-| $B569 | Item spawn positions A | 100 bytes (5-bit packed coords) |
-| $B5CD | Item spawn positions B | 100 bytes (5-bit packed coords) |
-| $B631 | Item spawn positions C (upper nibble) + bubble spawns (lower nibble) | 100 bytes |
-| $B695 | Wind currents / level data | Variable (up to 1,145 bytes) |
-| $BB0E | Sidebar chars | 1,888 bytes (32 bytes × 59 sidebars) |
-| $C26E | Platform chars | 800 bytes |
-| $C58E | Hole metadata (lower nibble: holes, upper nibble: bubble currents) | 100 bytes |
-| $C5F2 | Bitmaps | 6,670 bytes (46 bytes × 145 levels) |
-| $FF30 | Background colors | 100 bytes |
-| $FF94 | Symmetry flag (bit 7) + sidebar chars index (bits 0-6) | 100 bytes |
+**RR-Net** (CS8900a):
 
-### Item Data Tables
+- Raw Ethernet frames with EtherType `$88B5`: destination MAC, source MAC, type, length, message.
+- No IP, so no ARP and no IP set-up.
+- Only frames from the server's MAC to our own are accepted: VICE's emulated chip lets other frames through.
 
-| Address | Description | Length |
-|---------|-------------|--------|
-| $A790 | Enemy death bonus item indices | 6 bytes (starting at $A791) |
-| $A81F | Large bonus sprite colors (cupcake, melon, diamonds) | 5 bytes |
-| $A892 | Points item char block indices | 47 bytes |
-| $A8C1 | Powerup item char block indices | 35 bytes |
-| $A8E4 | Points item color indices (lower nibble only) | 47 bytes |
-| $A913 | Powerup item color indices (lower nibble only) | 35 bytes |
-| $AB63 | Monster sprite colors | 8 bytes (one per monster type) |
+## 4. The server
 
-### Other Lookup Tables
+The server started as the WoW-LAN game server. Its core:
 
-| Address | Description |
-|---------|-------------|
-| $AB52 | Pickup point values |
-| $AC03/$AC04 | Screen address lookup |
-| $ACDD | Standard climbing offsets |
-| $ACED | Velocity climbing offsets |
-| $F305 | Sound channel state (3 channels) |
-| $F323 | Sound frequency table |
-| $F35A | Sound effect configuration |
+- the lobby;
+- invitations;
+- sessions;
+- timeouts;
+- the dashboard;
+- unit tests with a fake clock.
+
+The **Bubble Bobble module** (game id 3):
+
+- picks the seed and the input delay;
+- relays INPUT messages (cutting off Ethernet padding);
+- compares the checksums;
+- gives a player up to `loadTimeoutSeconds` to load the game before his first INPUT.
+
+The core asks the module how long a player in a session may stay silent, so a C64 loading from a 1541 is not dropped.
+
+Three transports share one core. Each client is identified by an `IPEndPoint`:
+
+| Transport | Clients | End point |
+|---|---|---|
+| UDP, port 6465 | Ultimate | its IPv4 address and port |
+| TCP, port 6466, `[length][message]`, NoDelay | WiC64 | IPv4-mapped IPv6 address |
+| pcap, raw Ethernet `$88B5` | VICE RR-Net | IPv6 link-local address made from its MAC (EUI-64) |
+
+The pcap transport opens the interface in immediate mode and answers with the server's own MAC (`pcapMac`). The C64s find it by broadcasting their HELLO.
+
+## 5. The packer
+
+The game image (`$0400-$FFFA`, 64.5 KB) is too big for a normal PRG. `tools/pack.py`:
+
+- compresses it with an optimal-parse LZ to 46.5 KB;
+- adds the 6502 unpacker from `tools/sfx.s`.
+
+The unpacker:
+
+1. runs from `$0200-$03BF`;
+2. moves the compressed data to the top of memory;
+3. decompresses forward in place, with `pack.py` checking that the output never overtakes the input;
+4. passes on the handoff block;
+5. clears the stack page.
+
+```
+0LLLLLLL                 literal run, L+1 bytes
+10LLLLLL o               match, length L+2, distance o+1 (1-256)
+11LLLLLL lo hi           match, length L+3 (3-65)
+11111111 lo hi e         match, length e+66 (up to 255)
+```
+
+## 6. Tests and tools
+
+| Tool | What it does |
+|---|---|
+| `tools/dettest.py` | Runs a built-in bot in 5 VICEs: PAL, NTSC, CPU jitter, and stalls of 1-7 frames like network waits. All must log the same checksums (`--break` proves the test notices a difference) |
+| `tools/soak.py` | Lets the bot play in several VICEs and reports crashes (PC in `$0000-$03FF`) and hangs; can compare with `ORIGLAYOUT` |
+| `tools/nettest.py` | Server plus two VICEs (RR-Net, or `--wic64`), automatic invite/accept, test bot; follows the session on the dashboard API |
+| `tools/crashtrace.py` | Runs to a breakpoint/watchpoint (any VICE monitor condition) and dumps registers and CPU history |
+| `tools/watch.py`, `tools/dumpdiff.py`, `tools/startdiff.py` | Progress, memory comparison between two C64s, start-state comparison |
+| `tools/screenshots.py` | The screenshots of this documentation |
+
+Bugs these tools found, among others:
+
+- the layout problem above;
+- a sound start racing the IRQ;
+- the received tick window wrapping below tick 0;
+- VICE passing frames for other MACs to the CS8900a;
+- the pause key decoded from the fire button;
+- cc65's `'\r'` not being the RETURN key.

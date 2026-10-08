@@ -92,6 +92,24 @@ Daardoor kan een WiC64-speler gewoon tegen een Ultimate- of VICE-speler spelen.
 
 ---
 
+## Status (2026-10-08): alle fases uitgevoerd
+
+| Fase | Status | Afwijkingen van het plan |
+|---|---|---|
+| 0 Basis | ✅ | `tools/build.py`, eigen packer |
+| 1 Determinisme | ✅ | virtuele speltijd (`vframe`). Les: geen byte van het origineel mag verschuiven (zie `docs/TECHNICAL.md`) |
+| 2 Geheugen | ✅ | gecomprimeerde levels geven ~1,3 KB. Eén gamebestand per netwerktype. Raw Ethernet voor RR-Net, in plaats van ip65 in het spel |
+| 3 Netlaag | ✅ | Ultimate (UCI) en RR-Net, in ca65 |
+| 4 Lockstep | ✅ | elke sessie start met een vers geladen spel, zodat beide C64's identiek beginnen |
+| 5 Server | ✅ | Bubble Bobble-module, laadtijd-tolerantie, pcap-transport (VICE op dezelfde pc), TCP-transport (WiC64), 44 unit tests |
+| 6 Lobby/UI | ✅ | aparte lobby-PRG in C (cc65), tekstmodus. `BBLAN.CFG`. AUTO-modus voor tests |
+| 7 Tests/release | ✅ VICE | `tools/nettest.py`: complete sessies via RR-Net en WiC64-emulatie, checksums identiek. Release: `release/bblan.d64` |
+| 8 WiC64 | ✅ VICE | firmware 2.x via TCP. Input delay 4 en om de tick zenden, omdat elke WiC64-overdracht C64-tijd kost |
+
+**Nog te doen op echte hardware** (kon hier niet):
+- C64 Ultimate / Ultimate 64: de UCI-code is nagekeken tegen de werkende WoW-LAN-driver, maar niet gedraaid.
+- Een echte WiC64.
+
 ## 4. Fasering
 
 ### Fase 0 — Basis en baseline

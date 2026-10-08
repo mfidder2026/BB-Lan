@@ -30,7 +30,7 @@ public sealed class ServerConfig
     public bool AutoPair { get; set; }
 
     /// <summary>Bots the server starts together with itself; they accept every challenge.</summary>
-    public List<string> Bots { get; set; } = ["WORLUK", "GARWOR", "THORWOR"];
+    public List<string> Bots { get; set; } = [];
 
     /// <summary>Game the built-in bots play.</summary>
     public byte BotGame { get; set; } = 1;
@@ -53,7 +53,7 @@ public sealed class ServerConfig
     public List<GameConfig> Games { get; set; } =
     [
         new GameConfig { Id = 3, Name = "Bubble Bobble", Module = "bubblebobble", Version = 1,
-            Settings = new() { ["inputDelay"] = 2, ["inputTimeoutSeconds"] = 10, ["loadTimeoutSeconds"] = 150 } },
+            Settings = new() { ["inputDelay"] = 2, ["inputDelayWiC64"] = 4, ["inputTimeoutSeconds"] = 10, ["loadTimeoutSeconds"] = 150 } },
         new GameConfig { Id = 1, Name = "Wizard of Wor", Module = "wizardofwor", Version = 1 },
         new GameConfig { Id = 2, Name = "Relay demo", Module = "relay", Version = 1, MinPlayers = 2, MaxPlayers = 4 },
     ];

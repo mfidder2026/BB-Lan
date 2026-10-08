@@ -192,6 +192,9 @@ public sealed class BubbleBobbleModule(GameConfig config) : RelayModule(config)
     public const int ChecksumHistory = 16;
 
     private readonly int _inputDelay = Math.Clamp(config.Settings.GetValueOrDefault("inputDelay", 2), 1, 4);
+
+    // a WiC64 spends a lot of C64 time per transfer: a longer delay lets one poll bring several ticks
+    private readonly int _inputDelayWiC64 = Math.Clamp(config.Settings.GetValueOrDefault("inputDelayWiC64", 4), 1, 4);
     private readonly int _inputTimeout = config.Settings.GetValueOrDefault("inputTimeoutSeconds", 10);
     private readonly int _loadTimeout = config.Settings.GetValueOrDefault("loadTimeoutSeconds", 150);
 
@@ -204,6 +207,7 @@ public sealed class BubbleBobbleModule(GameConfig config) : RelayModule(config)
         public ushort? LastCompared;
         public DateTime[] LastInput = [];
         public DateTime Started;
+        public int InputDelay;
     }
 
     public override byte[] CreateSession(Session session, Random random)
@@ -216,8 +220,9 @@ public sealed class BubbleBobbleModule(GameConfig config) : RelayModule(config)
             LastInput = new DateTime[session.Players.Count],
         };
         Array.Fill(st.NewestTick, -1);
+        st.InputDelay = session.Players.Any(p => p.EndPoint.Address.IsIPv4MappedToIPv6) ? _inputDelayWiC64 : _inputDelay;
         session.ModuleState = st;
-        return [(byte)st.Seed, (byte)(st.Seed >> 8), (byte)_inputDelay];
+        return [(byte)st.Seed, (byte)(st.Seed >> 8), (byte)st.InputDelay];
     }
 
     public override TimeSpan IdleTimeout(Session session, Client player, TimeSpan normal)
@@ -293,7 +298,7 @@ public sealed class BubbleBobbleModule(GameConfig config) : RelayModule(config)
             ("tick", string.Join(" / ", st.NewestTick.Select(t => t < 0 ? "loading" : t.ToString()))),
             ("checksums ok", st.LastCompared is { } t ? $"{st.ChecksumsCompared} (last tick {t})" : "0"),
             ("seed", $"{st.Seed:X4}"),
-            ("input delay", _inputDelay.ToString()),
+            ("input delay", st.InputDelay.ToString()),
         ];
     }
 }

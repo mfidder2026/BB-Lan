@@ -146,7 +146,7 @@ static unsigned char input(char *buf, unsigned char max, unsigned char digits_do
     cursor(1);
     for (;;) {
         c = cgetc();
-        if (c == '\r') break;
+        if (c == CH_ENTER) break;
         if (c == 0x5F) { cursor(0); return 0; }          /* left arrow */
         if (c == 0x14) {                                 /* DEL */
             if (n) { --n; gotox(wherex() - 1); cputc(' '); gotox(wherex() - 1); }
@@ -433,7 +433,7 @@ static void lobby(void)
         joy = joy2();
         if (joy & ~lastjoy & 1) key = CH_CURS_UP;
         if (joy & ~lastjoy & 2) key = CH_CURS_DOWN;
-        if (joy & ~lastjoy & 16) key = '\r';
+        if (joy & ~lastjoy & 16) key = CH_ENTER;
         lastjoy = joy;
         if (!key) continue;
 
@@ -446,7 +446,7 @@ static void lobby(void)
         case LOBBY:
             if (key == CH_CURS_UP && sel) { --sel; redraw = 1; }
             if (key == CH_CURS_DOWN && sel + 1 < nplayers) { ++sel; redraw = 1; }
-            if ((key == '\r' || key == ' ') && sel < nplayers) {
+            if ((key == CH_ENTER || key == ' ') && sel < nplayers) {
                 if (players[sel].id == myid) status("That is you.");
                 else if (players[sel].flags & 6) status("That player is not free.");
                 else {
@@ -459,7 +459,7 @@ static void lobby(void)
             if (key == 'n') { send2(M_DECLINE, 0); st = LOBBY; status("FIRE/RETURN: invite   F1: back"); }
             break;
         case CHALLENGED:
-            if (key == '\r' || key == 'y' || key == ' ') { send2(M_ACCEPT, challenge); status("Accepted, starting..."); }
+            if (key == CH_ENTER || key == 'y' || key == ' ') { send2(M_ACCEPT, challenge); status("Accepted, starting..."); }
             if (key == 'n') { send2(M_DECLINE, challenge); st = LOBBY; status("FIRE/RETURN: invite   F1: back"); }
             break;
         }
@@ -507,13 +507,13 @@ int main(void)
               "  L          local game (2 joysticks)\r\n"
               "  S          settings\r\n");
 
-        if ((came_back || auto_mode) && drv != DRV_NONE && *nick) key = '\r';
+        if ((came_back || auto_mode) && drv != DRV_NONE && *nick) key = CH_ENTER;
         else key = cgetc();
         came_back = 0;
 
         if (key == 's') { settings(drv == DRV_UCI || drv == DRV_WIC); cfg_save(); continue; }
         if (key == 'l') { memset(HB, 0, HB_SIZE); start_game(game_file()); }
-        if (key != '\r' && key != CH_F1) continue;
+        if (key != CH_ENTER && key != CH_F1) continue;
         if (drv == DRV_NONE || PEEK(0x02A6) == 0) continue;
         if (!*nick || ((drv == DRV_UCI || drv == DRV_WIC) && !*server)) { settings(drv == DRV_UCI || drv == DRV_WIC); cfg_save(); }
         if (net_connect(server, SERVER_PORT)) {

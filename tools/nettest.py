@@ -77,7 +77,7 @@ def main():
         json.dump({"gamePort": 6465, "dashboardPort": 8080, "bots": [], "logFile": "server.log",
                    "pcapInterface": iface, "pcapMac": "02:BB:4C:41:4E:01",
                    "games": [{"id": 3, "name": "Bubble Bobble", "module": "bubblebobble", "version": 1,
-                              "settings": {"inputDelay": 2, "inputTimeoutSeconds": 10,
+                              "settings": {"inputDelay": 2, "inputDelayWiC64": 4, "inputTimeoutSeconds": 10,
                                            "loadTimeoutSeconds": 150}}]}, f, indent=1)
     log = os.path.join(SRV_DIR, "server.log")
     if os.path.exists(log):

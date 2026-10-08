@@ -129,6 +129,7 @@ _uci_exec:
         bne     :-
 :       lda     UCI_CTRL
         and     #STATE
+        beq     :+                      ; idle: nothing to acknowledge
         tay
         lda     #ACC
         sta     UCI_CTRL
