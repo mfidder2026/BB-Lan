@@ -250,7 +250,11 @@ L_4556:
         ; Title Screen Wait Loop - Check for Fire Button or Cheat Code
         ;-----------------------------------------------------------------------
 L_4565:
+.ifdef DETTEST
+        jmp     L_45A1                              ; BB-LAN test: no fire needed
+.else
         jsr     wait_one_frame                              ; Display title screen
+.endif
 
         lda     CIA1_PRA                            ; Read joystick port 2
         and     #$10                                ; Test fire button bit

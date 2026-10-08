@@ -608,7 +608,13 @@ prng_update:
     lda  $27
     eor  RESHO                ; RESHO - XOR for mixing
     adc  $27                ; Add with carry
+.ifdef BBLAN
+    nop                        ; BB-LAN: no timer entropy (deterministic)
+    nop
+    nop
+.else
     eor  CIA1_TBLO            ; CIA1_TBLO - XOR with timer for entropy
+.endif
     sta  RESHO                ; RESHO - store new random value
     
     rts

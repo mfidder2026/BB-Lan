@@ -4,8 +4,8 @@ Bubble Bobble (C64) omgebouwd voor coöperatief spel over het netwerk. Elke spel
 eigen C64: VICE, een C64 Ultimate/Ultimate 64, of later een C64 met WiC64. Beide machines
 draaien het spel in lockstep en wisselen via een gameserver alleen joystick-input uit.
 
-> Status: **fase 0**. De originele game bouwt en draait; er is nog geen netwerkcode.
-> Zie [docs/PLAN.md](docs/PLAN.md) voor het volledige plan.
+> Status: **fase 1** (deterministische tick-kern), nog zonder netwerkcode.
+> Zie [docs/PLAN.md](docs/PLAN.md) voor het plan en de status per fase.
 
 ## Bouwen
 
@@ -13,10 +13,20 @@ Benodigd: Python 3 en cc65 (ca65/ld65). De build zoekt cc65 in `$CC65_HOME/bin`,
 `../c64/cc65/bin` naast deze repo, daarna in `PATH`.
 
 ```bash
-python tools/build.py              # build/rebb64-raw.prg (ruwe image $0400-$FFFA)
-python tools/build.py verify       # + SHA256-check: identiek aan het origineel
-python tools/build.py release      # + build/bblan.prg (zelfuitpakkend, LOAD/RUN)
+python tools/build.py release      # BB-LAN: build/bblan.prg (zelfuitpakkend, LOAD/RUN)
+python tools/build.py verify       # origineel spel + SHA256-check
+python tools/build.py original     # origineel spel als build/rebb64.prg
 python tools/build.py clean
+```
+
+Patches aan het originele spel mogen geen code verschuiven (zie
+`BB_PATCH_END` in `src/master.s`); de build controleert dat.
+
+## Testen
+
+```bash
+python tools/dettest.py            # determinisme: PAL/NTSC/jitter moeten gelijke checksums geven
+python tools/soak.py 300 8         # laat de bot spelen vanaf level 8, meldt crashes/hangs
 ```
 
 `bblan.prg` laadt als gewone BASIC-PRG (`LOAD"BBLAN",8` + `RUN`, of autostart in VICE).

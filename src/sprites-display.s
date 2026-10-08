@@ -27,6 +27,10 @@
 ; 3. Comparing and updating high score if needed
 ; ============================================================================
 ; D_E3A7 now defined as label below (update_sprite_animations)
+.if .defined(COMPRESS_LEVELS) .and (.defined(BBLAN) .or .defined(ORIGLAYOUT))
+.segment "CODE_LEVEL_RENDERER"
+        .res    23, $EA                 ; BB-LAN: keep PRG_HIGH where the original has it
+.endif
 .segment "CODE_SPRITES_DISPLAY"
 
 update_sprite_animations:
@@ -210,11 +214,16 @@ L_E491:
 ; ============================================================================
 ; D_E494 now defined as label below (wait_one_frame)
 wait_one_frame:
+.ifdef BBLAN
+        jmp     vframe                  ; BB-LAN: advance one logical frame
+        BB_PATCH_END wait_one_frame, 7
+.else
         lda     $08                     ; Get current frame counter
 L_E496:
         cmp     $08                     ; Compare with current value
         beq     L_E496                  ; Loop until it changes
         rts
+.endif
 
 ; ============================================================================
 ; COPY_SCREEN_BUFFERS ($E49B)

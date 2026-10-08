@@ -131,6 +131,15 @@ D_A5A0:
 ; Called from main menu/attract mode
 ;-------------------------------------------------------------------------------
 
+; BB-LAN: the fire waits below read the synced input
+.ifdef BBLAN
+BB_JOY0 = bb_in0
+BB_JOY1 = bb_in1
+.else
+BB_JOY0 = CIA1_PRA
+BB_JOY1 = CIA1_PRB
+.endif
+
 D_A5B7:
         ldx     #$00                ; a2 00 (self-modified by joystick-input.s)
 D_A5B8_smc = D_A5B7 + 1            ; SMC target: operand of ldx #imm above
@@ -191,10 +200,10 @@ D_A5B8_smc = D_A5B7 + 1            ; SMC target: operand of ldx #imm above
         ;-----------------------------------------------------------------------
 @wait_press:
         jsr     wait_one_frame              ; 20 94 e4 - Wait one frame
-        lda     CIA1_PRA            ; ad 00 dc - Read joystick port 2
+        lda     BB_JOY0             ; ad 00 dc - Read joystick port 2
         and     #$10                ; 29 10 - Check fire button bit
         beq     @wait_release       ; f0 07 - Button pressed, wait for release
-        lda     CIA1_PRB            ; ad 01 dc - Read joystick port 1
+        lda     BB_JOY1             ; ad 01 dc - Read joystick port 1
         and     #$10                ; 29 10 - Check fire button bit
         bne     @wait_press         ; d0 ef - No button pressed, keep waiting
 
@@ -203,10 +212,10 @@ D_A5B8_smc = D_A5B7 + 1            ; SMC target: operand of ldx #imm above
         ;-----------------------------------------------------------------------
 @wait_release:
         jsr     wait_one_frame              ; 20 94 e4 - Wait one frame
-        lda     CIA1_PRA            ; ad 00 dc - Read joystick port 2
+        lda     BB_JOY0             ; ad 00 dc - Read joystick port 2
         and     #$10                ; 29 10 - Check fire button bit
         beq     @wait_release       ; f0 f6 - Still pressed, keep waiting
-        lda     CIA1_PRB            ; ad 01 dc - Read joystick port 1
+        lda     BB_JOY1             ; ad 01 dc - Read joystick port 1
         and     #$10                ; 29 10 - Check fire button bit
         beq     @wait_release       ; f0 ef - Still pressed, keep waiting
         rts                         ; 60 - Return (button was pressed and released)

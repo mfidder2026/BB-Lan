@@ -499,11 +499,16 @@ read_keyboard_wait:
 D_7EB3:
         jsr     wait_one_frame              ; 20 94 e4 - Wait one frame
 D_7EB6:
+.if .defined(BBLAN) .or .defined(ORIGLAYOUT)
+        lda     bb_key              ; BB-LAN: synced keyboard row 7
+        BB_PATCH_END D_7EB6, 8
+.else
         lda     #$7F                ; a9 7f - Select keyboard row
 read_keyboard:
 D_7EB8:
         sta     CIA1_PRA            ; 8d 00 dc
         lda     CIA1_PRB            ; ad 01 dc - Read keyboard column
+.endif
         cmp     #$DF                ; c9 df - Check for SPACE ($DF when pressed)
         rts                         ; 60
 
@@ -528,7 +533,11 @@ D_7EC1:
         ldx     #$07                ; a2 07
         jsr     D_1E30              ; 20 30 1e
         jsr     D_1805              ; 20 05 18
+.ifdef BBLAN
+        jsr     bb_sound_init           ; BB-LAN: sound_init with IRQ held off
+.else
         jsr     sound_init              ; 20 bd f4 - Init sound
+.endif
         pla                         ; 68    - Clean up stack
         pla                         ; 68
         lda     #$19                ; a9 19

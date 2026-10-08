@@ -207,6 +207,21 @@ SID_VOL        = $D418  ; Volume and filter mode control
 CIA1_PRA    = $DC00     ; Joystick port 2
 CIA1_PRB    = $DC01     ; Joystick port 1
 CIA1_TBLO   = $DC06     ; CIA1 timer B low byte (used for RNG entropy)
+CIA1_TALO   = $DC04     ; CIA1 timer A low byte (BB-LAN JITTER test only)
+
+; ----------------------------------------------------------------------------
+; BB-LAN patches must keep every byte of the original game in place: the
+; reconstructed source still has hidden absolute references, so code that
+; moves breaks the game in subtle ways (garbage on screen, crashes around
+; level 9/13). A patch replaces original code with code of at most the same
+; size; BB_PATCH_END pads the rest with NOPs. New code goes to BBLAN_CODE.
+; tools/build.py checks that all code segments stay where the original has
+; them.
+; ----------------------------------------------------------------------------
+.macro BB_PATCH_END start, size
+        .assert (* - start) <= size, error, "BB-LAN patch is larger than the original code"
+        .res    size - (* - start), $EA
+.endmacro
 CIA1_ICR    = $DC0D     ; CIA1 interrupt control register
 CIA2_PRA    = $DD00     ; CIA2 port A (VIC bank selection)
 CIA2_TALO   = $DD04     ; CIA2 timer A low byte
@@ -773,6 +788,12 @@ SCREEN_TO_COLORRAM_EOR = >__VIC_SCREEN_B__ ^ >$D800
 
 ; Level data part 2 ($7440-$7FFF, 3008 bytes)
 .include "level-data-part2.s"
+
+.ifdef BBLAN
+.include "bblan.s"
+.elseif .defined(ORIGLAYOUT)
+.include "bblan-origlayout.s"
+.endif
 
 ; (Music command handlers, sound data, sound engine, SFX data, and
 ; final data section are all now in sound.s)

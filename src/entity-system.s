@@ -1441,7 +1441,12 @@ L_F0E1:
 
 L_F0E3:
     ; Start game
+.ifdef BBLAN
+    jsr  bb_game_start          ; BB-LAN: same start state + both incs below
+    BB_PATCH_END L_F0E3, 5
+.else
     inc  SUBFLG                 ; Set game start flag
     inc  D_5AFF                 ; Set active flag
+.endif
     jsr  D_08E4                 ; Initialize game
     jmp  D_F005                 ; Return to title (or continue)

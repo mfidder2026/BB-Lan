@@ -155,7 +155,11 @@ check_join_game:
 L_052C:
         lda     ENESSION,x          ; b5 b2
         bne     L_05A6              ; d0 76
+.if .defined(BBLAN) .or .defined(ORIGLAYOUT)
+        lda     bb_in0,x            ; BB-LAN: synced joystick
+.else
         lda     CIA1_PRA,x          ; bd 00 dc - Read joystick
+.endif
         and     #$10                ; 29 10    - Fire button
         bne     L_05A6              ; d0 6f    - Not pressed
 
@@ -245,9 +249,15 @@ L_05AC:
 
 D_05AD:
         jsr     wait_one_frame                  ; Sync to frame boundary
+.ifdef BBLAN
+bb_sound_patch:
+        jmp     bb_sound_start          ; BB-LAN: same, with the IRQ held off
+        BB_PATCH_END bb_sound_patch, 9
+.else
         sty     D_5C3F                  ; Store Y to temp
         jsr     music_start             ; Queue new song (IRQ picks it up next frame)
         jmp     sound_update            ; Process first frame immediately
+.endif
 
 ; ============================================================================
 ; LEVEL COLUMN OFFSET TABLE ($05B9) - DATA

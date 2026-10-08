@@ -243,6 +243,18 @@ L_0A48:
         ; Frame skip: Wait for 2 frames (25fps double-buffer sync)
 wait_frame:
 L_0A5A:
+.ifdef BBLAN
+        ; BB-LAN: bb_wait2 advances logical frames until the frame counter
+        ; has moved two past the snapshot, then continues at bb_wf_after.
+        ; The snapshot bytes keep their original addresses.
+        jsr     bb_wait2                        ; never returns here
+D_0A5D: .byte   $00                             ; frame snapshot (SMC)
+        .byte   $EA, $EA
+D_0A60: .byte   $EA
+D_0A61: .byte   $01                             ; frame snapshot + 1 (SMC)
+        .byte   $EA, $EA
+bb_wf_after:
+.else
         lda     ENDCHR                          ; $0A5A - Frame counter
         cmp     #$00                            ; $0A5C - Self-modified value
 D_0A5D = * - 1                                  ; Label for self-modifying code
@@ -251,6 +263,7 @@ D_0A60:
         cmp     #$01                            ; $0A60 - Self-modified value
 D_0A61 = * - 1                                  ; Label for self-modifying code
         beq     L_0A5A                          ; $0A62 - Wait another frame
+.endif
         
         ; Check if game should continue
         lda     ENESSION                        ; $0A64 - Player 1 state

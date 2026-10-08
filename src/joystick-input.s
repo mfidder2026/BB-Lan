@@ -16,16 +16,31 @@
 ; Read joystick ports and initialize player state loop
 ; ============================================================================
 D_1CBD:
+.ifdef BBLAN
+    ldx  #$00
+    stx  D_2922                 ; Clear joystick data
+    lda  bb_in0                 ; BB-LAN: this tick's synced input
+    sta  D_85E8
+    lda  bb_in1
+    sta  D_85E9
+    BB_PATCH_END D_1CBD, 26
+.else
     lda  #$7f
     sta  CIA1_PRA               ; Set up CIA port A
     ldx  #$ff
     stx  CIA1_PRB               ; Set up CIA port B
     inx
     stx  D_2922                 ; Clear joystick data
+  .ifdef ORIGLAYOUT
+    jsr  ol_joy                 ; test: bot input, same size as the reads
+    .res 9, $EA
+  .else
     lda  CIA1_PRA
     sta  D_85E8                 ; Store port A reading
     lda  CIA1_PRB
     sta  D_85E9                 ; Store port B reading
+  .endif
+.endif
     ldx  #$07
     stx  INDEX1                 ; Initialize player loop counter
 

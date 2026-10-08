@@ -123,6 +123,45 @@ Daardoor kan een WiC64-speler gewoon tegen een Ultimate- of VICE-speler spelen.
    - Vergelijk de checksums per tick.
 - **Klaar wanneer:** 10+ levels met een opgenomen input geven identieke checksums, met en zonder vertraging.
 
+#### Status fase 1 (2026-10-08)
+
+**Gedaan**
+- **Virtuele speltijd** (`src/bblan.s`):
+  - De IRQ telt alleen nog echte frames.
+  - Elke frame-wacht in het spel roept `vframe` aan. Die voert precies één logisch frame uit: timers, framecounter, en op oneven frames de oude IRQ-logica (`D_1805`, `D_1B40`, `D_1CBD`).
+  - `vframe` wordt afgestemd op echte frames en mag tot 4 frames achterstand inhalen.
+- **Tick = oneven logisch frame (25 Hz).**
+  - `bb_sample` levert de input van beide spelers in `bb_in0`/`bb_in1`/`bb_key`.
+  - Alle input-reads (speler, join, pauze/quit, titel, eindscherm) gaan daar doorheen.
+- **PRNG:**
+  - De CIA-timer zit er niet meer in.
+  - De seed wordt bij de start van een spel gezet (`bb_game_start`), net als de frame- en tick-teller.
+- **Geluid:** het starten van een liedje en `sound_init` vanuit de hoofdthread gebeuren met de IRQ uitgeschakeld.
+- **Ruimte:** de build gebruikt gecomprimeerde levels. `build.py` kiest de verdeling tussen PRG_MID en I/O-shadow automatisch. Er is nu ~1070 bytes vrij in `BBLAN_CODE`.
+- **Testtools:**
+  - `tools/dettest.py`: PAL, PAL+jitter, NTSC en NTSC+jitter geven **identieke checksums** over 12.800 ticks (512 s speltijd). `--break` bewijst dat de test afwijkingen ziet.
+  - `tools/soak.py`: crash/hang-detectie.
+  - `tools/watch.py`, `tools/crashtrace.py` (VICE-breakpoints + CPU-historie) en `tools/startdiff.py`.
+
+**Belangrijke les: geen enkele byte van het originele spel mag verschuiven.**
+- Elke patch die code langer of korter maakte, verschoof de code erachter. Het spel liep dan vast rond level 9/13, met een band rommeltekens op het scherm.
+  - Oorzaak: een entity kreeg een ongeldig type. De dispatch sprong daardoor naar willekeurige code en tekende over de zero page en de geluidsvariabelen heen.
+  - Een build met de originele layout en dezelfde bot crashte niet.
+- **Regel:**
+  - Patches zijn even groot als de originele code (`BB_PATCH_END`-macro, opvullen met NOP's). Nieuwe code komt in `BBLAN_CODE`.
+  - `build.py` controleert tegen `tools/original-layout.json` dat elk origineel segment op zijn plek staat.
+  - De 23 bytes die de compressie in de renderer bespaart worden opgevuld.
+- `ORIGLAYOUT=1` is een referentiebuild: het origineel met de bot, code byte voor byte op zijn plek.
+
+**Open punt → oplossen in fase 4 (sessiestart)**
+- Een potje dat start nadat de machine al eerder speelde, begint niet in exact dezelfde toestand als een vers potje. `PREGAME`-variant van dettest; `tools/startdiff.py` toont de verschillen: entity-tabellen, schermbuffers, geluidsstatus, enzovoort.
+- Voor LAN-spel moeten beide machines identiek starten. Opties:
+  - (a) bij de sessiestart de spelstatus van de host naar de joiner sturen;
+  - (b) elke sessie vanaf een verse load starten: lobby-PRG → game laden;
+  - (c) de minimale set te resetten variabelen bepalen met `startdiff`.
+- Voorkeur: (a) of (b). Dat wordt bepaald in fase 4.
+- Nog niet gedaan: NTSC-weigering (komt met de lobby in fase 6) en de gesynchroniseerde pauze over het netwerk (fase 4).
+
 ### Fase 2 — Geheugenbudget
 Nodig is ongeveer 3.3 KB voor ip65 (alleen RR-Net), ongeveer 1 KB voor UCI, ongeveer 1 KB voor WiC64, 2–3 KB voor lockstep/protocol/lobby, en buffers (2×256 B input-ring + 128 B rx).
 

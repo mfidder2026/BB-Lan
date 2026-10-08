@@ -23,8 +23,17 @@
 
 irq_frame_update:
         jsr     D_7BB3              ; 20 b3 7b - Bank in RAM
+.ifdef BBLAN
+        ; BB-LAN: timers, frame counter and the odd-frame logic run in
+        ; vframe (bblan.s); bb_irq only counts real frames. The original
+        ; code below stays in place but is no longer executed.
+bb_irq_patch:
+        jmp     bb_irq
+        BB_PATCH_END bb_irq_patch, 4
+.else
         lda     TXTTAB              ; a5 2b
         bmi     L_06CA              ; 30 18
+.endif
         dec     TXTTAB              ; c6 2b
         bne     L_06CA              ; d0 14
         lda     #$32                ; a9 32 - 50 frames = 1 second

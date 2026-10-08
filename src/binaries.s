@@ -392,11 +392,16 @@ physics_flags:
 ; making the two segments contiguous. The decompressor reads across both segments
 ; sequentially, so they MUST be contiguous in memory.
 ;
-; If IO_LEVEL_BITMAPS moves (due to changes in preceding segments), update $C5F2.
+; IO_LEVEL_BITMAPS starts at LEVEL_BM_START (passed by tools/build.py to both
+; ca65 and ld65). build.py picks it so that the high part just fits in the
+; I/O shadow, which leaves free PRG_MID space for BBLAN_CODE.
 ; See c64-prg.cfg for segment layout.
 ; Generated from data/levels.txt by build/convert-levels.py
 ;-------------------------------------------------------------------------------
-COMPRESSED_SPLIT = $D000 - $C5F2 - 100  ; bytes of compressed data before I/O shadow
+.ifndef LEVEL_BM_START
+LEVEL_BM_START = $C5F2
+.endif
+COMPRESSED_SPLIT = $D000 - LEVEL_BM_START - 100  ; bytes of compressed data before I/O shadow
 
         .segment "IO_LEVEL_BITMAPS"
 level_bitmap_deltas:
