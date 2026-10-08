@@ -44,7 +44,7 @@ def main():
     for i, name in enumerate(runs):
         port = 6600 + i
         procs[name] = (port, subprocess.Popen(
-            [VICE, "-default", "-pal", "-warp", "-sounddev", "dummy", "-autostartprgmode", "1",
+            [VICE, "-default", "-minimized", "-pal", "-warp", "-sounddev", "dummy", "-autostartprgmode", "1",
              "-remotemonitor", "-remotemonitoraddress", f"ip4://127.0.0.1:{port}",
              "-autostart", os.path.join(BUILD, name + ".prg")],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))

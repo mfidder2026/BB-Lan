@@ -1283,7 +1283,11 @@ L_F004:
 
     ; D_F005 - Title Screen Initialization
 D_F005:
+.ifdef BBLAN
+    jsr  bb_title               ; BB-LAN: a session ends here
+.else
     jsr  D_A5A0                 ; Initialize title screen graphics
+.endif
     
     ; Set up text display pointers
     ldx  #<title_screen_text    ; Text pointer low byte

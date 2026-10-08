@@ -2,6 +2,8 @@
 """BB-LAN build script (replaces build/Makefile on Windows; no make needed).
 
 Usage:
+    python tools/build.py disk         the release disk build/bblan.d64 (lobby + games)
+    python tools/build.py testdisk     the same with a test bot: build/bblan-test.d64
     python tools/build.py              BB-LAN build: build/bblan-raw.prg
     python tools/build.py release      + packed, runnable build/bblan.prg
     python tools/build.py release -D DETTEST=1 -o dettest   test variant
@@ -144,25 +146,34 @@ def build(bblan, extra_defs=(), bblan_raw=BBLAN_RAW):
         for d in extra_defs:
             defs += ["-D", d]
         clen = os.path.getsize(os.path.join(BUILD, "level-bitmaps-compressed.bin"))
-        # Start with most of the bitmaps in the I/O shadow; move bytes down
-        # into PRG_MID until it links, then hand back the unused shadow space.
+        # Split the compressed bitmaps so the I/O shadow is exactly full:
+        # ld65 says by how much the shadow overflows or PRG_MID collides.
         split = max(0, clen - 3600)
-        while True:
+        for _ in range(12):
             bm_start = 0xD000 - 100 - split
             assemble(ca65, defs + ["-D", f"LEVEL_BM_START=${bm_start:04X}"])
-            if link(ld65, output, bm_start, quiet=True):
-                break
-            split += 64
-            if split > clen:
-                link(ld65, output, bm_start)        # show the error
-                sys.exit("error: cannot fit level bitmaps")
-        io_end = max(s + z for s, z in segments().values() if 0xD000 <= s < 0xE000)
-        slack = 0xE000 - io_end
-        if slack > 0:
-            split = max(0, split - slack)
-            bm_start = 0xD000 - 100 - split
-            assemble(ca65, defs + ["-D", f"LEVEL_BM_START=${bm_start:04X}"])
-            link(ld65, output, bm_start)
+            cmd = [ld65, "-C", "c64-prg.cfg", "-D", f"__LEVEL_BM_START__=${bm_start:04X}",
+                   "-Ln", LBLFILE, "--dbgfile", DBGFILE, "-o", output, "loadaddr.o", "master.o"]
+            r = subprocess.run(cmd, cwd=BUILD, capture_output=True, text=True)
+            msg = r.stdout + r.stderr
+            over = re.search(r"overflows memory area .{1,4}IO_SHADOW.{1,4} by (\d+)", msg)
+            low = re.search(r"IO_LEVEL_BITMAPS.{1,4} start address is too low in .{1,4}PRG_MID.{1,4} by (\d+)", msg)
+            if over and low:
+                sys.exit(f"error: BBLAN_CODE does not fit: {low.group(1)} bytes too many")
+            if over:
+                split += int(over.group(1))
+            elif low:
+                split -= int(low.group(1))
+            elif r.returncode != 0:
+                print(msg)
+                sys.exit("error: link failed")
+            else:
+                io_end = max(s + z for s, z in segments().values() if 0xD000 <= s < 0xE000)
+                if io_end >= 0xE000:
+                    break
+                split = max(0, split - (0xE000 - io_end))   # hand back shadow space
+        else:
+            sys.exit("error: cannot place the level bitmaps")
         segs = segments()
         code_start, code_size = segs.get("BBLAN_CODE", (bm_start, 0))
         free = bm_start - (code_start + code_size)
@@ -222,7 +233,11 @@ def release(raw, out):
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import pack
     entry = label("game_entry")
-    pack.pack(os.path.join(BUILD, raw), os.path.join(BUILD, out), entry)
+    try:
+        hb = label("bb_hb")
+    except SystemExit:
+        hb = 0
+    pack.pack(os.path.join(BUILD, raw), os.path.join(BUILD, out), entry, hb)
 
 
 def clean():
@@ -234,10 +249,56 @@ def clean():
                 os.remove(p)
 
 
+def lobby():
+    """The lobby program (C, cc65): build/lobby.prg"""
+    cl65 = find_tool("cl65")
+    src = os.path.join(ROOT, "lobby")
+    files = [os.path.join(src, f) for f in ("main.c", "net.c", "rrnet.s", "uci.s", "loader.s")]
+    run([cl65, "-t", "c64", "-O", "-o", "lobby.prg", "-m", "lobby.map", *files])
+    size = os.path.getsize(os.path.join(BUILD, "lobby.prg"))
+    if 0x0801 + size > 0xC5F2:                  # the game's bb_end runs from $C5F2+
+        sys.exit("error: the lobby is too large")
+    print(f"built build/lobby.prg ({size} bytes)")
+
+
+def game(name, defs):
+    build(True, defs, name + "-raw.prg")
+    shutil.copy(os.path.join(BUILD, LBLFILE), os.path.join(BUILD, name + ".lbl"))
+    release(name + "-raw.prg", name + ".prg")
+
+
+def d64(image, files, label="bb-lan,bb"):
+    """files: [(local prg, c64 name)]"""
+    c1541 = find_vice_tool("c1541")
+    path = os.path.join(BUILD, image)
+    if os.path.exists(path):
+        os.remove(path)
+    cmd = [c1541, "-format", label, "d64", path]
+    for local, name in files:
+        cmd += ["-write", os.path.join(BUILD, local), name]
+    run(cmd)
+    print(f"built build/{image}")
+
+
+def find_vice_tool(name):
+    exe = name + (".exe" if os.name == "nt" else "")
+    candidates = []
+    if os.environ.get("VICE_DIR"):
+        candidates.append(os.path.join(os.environ["VICE_DIR"], exe))
+    candidates.append(os.path.join(ROOT, "..", "c64", "vice", "bin", exe))
+    for c in candidates:
+        if os.path.isfile(c):
+            return os.path.normpath(c)
+    found = shutil.which(name)
+    if found:
+        return found
+    sys.exit(f"error: {name} not found (set VICE_DIR)")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("target", nargs="?", default="all",
-                    choices=["all", "release", "verify", "original", "clean"])
+                    choices=["all", "disk", "testdisk", "lobby", "release", "verify", "original", "clean"])
     ap.add_argument("-D", dest="defs", action="append", default=[])
     ap.add_argument("-o", dest="name", default="bblan",
                     help="output name: build/NAME-raw.prg and build/NAME.prg")
@@ -251,6 +312,19 @@ def main():
             verify()
         else:
             release(OUTPUT, ORIGINAL_RELEASE)
+        return
+    if a.target == "lobby":
+        lobby()
+        return
+    if a.target in ("disk", "testdisk"):
+        # the release disk: lobby + one game file per network type; the test
+        # disk has a bot instead of the joystick (lobby config "bot=1")
+        extra = ["NETBOT=1"] if a.target == "testdisk" else []
+        lobby()
+        game("bbr", ["NET_RR=1", *extra, *a.defs])
+        game("bbu", ["NET_UCI=1", *extra, *a.defs])
+        d64("bblan.d64" if a.target == "disk" else "bblan-test.d64",
+            [("lobby.prg", "bblan"), ("bbr.prg", "bbr"), ("bbu.prg", "bbu")])
         return
     build(True, a.defs, a.name + "-raw.prg")
     shutil.copy(os.path.join(BUILD, LBLFILE), os.path.join(BUILD, a.name + ".lbl"))

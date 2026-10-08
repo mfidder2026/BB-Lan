@@ -10,7 +10,8 @@ same checksums, whatever the timing:
     dettest_jit     PAL, random CPU load every frame + random title time
     dettest (ntsc)  NTSC: different cycles per frame and IRQ positions
     dettest_jit (ntsc)
-    dettest_pre     PAL, jitter, and first a different game that is quit
+    dettest_stall   PAL, jitter and now and then 1-7 real frames stalled
+                    (like waiting for the network)
 
     python tools/dettest.py [seconds] [--no-build] [--break]
 
@@ -34,12 +35,12 @@ VARIANTS = [  # (run name, build name, video)
     ("pal_jitter", "dettest_jit", "pal"),
     ("ntsc", "dettest", "ntsc"),
     ("ntsc_jitter", "dettest_jit", "ntsc"),
-    ("pal_pregame", "dettest_pre", "pal"),
+    ("pal_stall", "dettest_stall", "pal"),
 ]
 DET_MAX = 200                   # must match bblan.s
 BUILDS = {"dettest": ["-D", "DETTEST=1"],
           "dettest_jit": ["-D", "DETTEST=1", "-D", "JITTER=1"],
-          "dettest_pre": ["-D", "DETTEST=1", "-D", "JITTER=1", "-D", "PREGAME=1"]}
+          "dettest_stall": ["-D", "DETTEST=1", "-D", "JITTER=2"]}
 
 
 def labels(name):
@@ -111,7 +112,7 @@ def main():
     for i, (run, build, video) in enumerate(VARIANTS):
         port = 6510 + i
         procs.append(subprocess.Popen(
-            [VICE, "-default", f"-{video}", "-warp", "-sounddev", "dummy",
+            [VICE, "-default", "-minimized", f"-{video}", "-warp", "-sounddev", "dummy",
              "-autostartprgmode", "1", "-remotemonitor",
              "-remotemonitoraddress", f"ip4://127.0.0.1:{port}",
              "-autostart", os.path.join(BUILD, build + ".prg")],

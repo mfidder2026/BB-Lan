@@ -24,7 +24,7 @@ def main():
     interval = float(sys.argv[3]) if len(sys.argv) > 3 else 4
     lbl = labels(name)
     p = subprocess.Popen(
-        [VICE, "-default", "-pal", "-warp", "-sounddev", "dummy", "-autostartprgmode", "1",
+        [VICE, "-default", "-minimized", "-pal", "-warp", "-sounddev", "dummy", "-autostartprgmode", "1",
          "-remotemonitor", "-remotemonitoraddress", f"ip4://127.0.0.1:{PORT}",
          "-autostart", os.path.join(BUILD, name + ".prg")],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

@@ -250,8 +250,10 @@ L_4556:
         ; Title Screen Wait Loop - Check for Fire Button or Cheat Code
         ;-----------------------------------------------------------------------
 L_4565:
-.ifdef DETTEST
-        jmp     L_45A1                              ; BB-LAN test: no fire needed
+.ifdef BBLAN
+        jsr     bb_boot_title                       ; BB-LAN: skipped in a session
+.elseif .defined(DETTEST)
+        jmp     L_45A1                              ; test: no fire needed
 .else
         jsr     wait_one_frame                              ; Display title screen
 .endif

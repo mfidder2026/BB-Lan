@@ -32,7 +32,7 @@ def run(name, hits, port, at="bb_game_inited", cond=""):
     if os.path.exists(out):
         os.remove(out)
     p = subprocess.Popen(
-        [VICE, "-default", "-pal", "-warp", "-sounddev", "dummy", "-autostartprgmode", "1",
+        [VICE, "-default", "-minimized", "-pal", "-warp", "-sounddev", "dummy", "-autostartprgmode", "1",
          "-remotemonitor", "-remotemonitoraddress", f"ip4://127.0.0.1:{port}",
          "-autostart", os.path.join(BUILD, name + ".prg")],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

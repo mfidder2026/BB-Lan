@@ -8,7 +8,7 @@
 
 .segment "BBLAN_CODE"
 
-.export bb_tick
+.export bb_tick, ol_passes, ol_hist
 
 bb_in0:         .byte   $7F
 bb_in1:         .byte   $FF
@@ -62,6 +62,25 @@ bot_rand:
         sta     bot_rng+1
 @r:     lda     bot_rng
         rts
+
+ol_passes:      .word   0
+ol_last:        .byte   0
+ol_hist:        .res    16              ; frames per pass (game running only)
+ol_pass:
+        inc     ol_passes
+        bne     :+
+        inc     ol_passes+1
+:       lda     $08
+        sec
+        sbc     ol_last
+        ldx     $08
+        stx     ol_last
+        ldx     MEMSIZ
+        beq     :+
+        and     #15
+        tax
+        inc     ol_hist,x
+:       jmp     D_1844
 
 bot_dirs:       .byte   $00, $04, $08, $01, $05, $09, $04, $08
 bot_idle:       .byte   $7F, $FF

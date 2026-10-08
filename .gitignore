@@ -22,3 +22,12 @@ __pycache__/
 
 # Screenshots from test runs
 build/*.png
+
+# test output
+build/*.d64
+build/*.cfg
+build/*.lst
+build/*.txt
+build/srvtest/
+server/**/bin/
+server/**/obj/

@@ -27,7 +27,7 @@ def main():
     hi = sys.argv[3] if len(sys.argv) > 3 else "03ff"
     timeout = float(sys.argv[4]) if len(sys.argv) > 4 else 180
     p = subprocess.Popen(
-        [VICE, "-default", "-pal", "-warp", "-sounddev", "dummy", "-autostartprgmode", "1",
+        [VICE, "-default", "-minimized", "-pal", "-warp", "-sounddev", "dummy", "-autostartprgmode", "1",
          "-remotemonitor", "-remotemonitoraddress", f"ip4://127.0.0.1:{PORT}",
          "-autostart", os.path.join(BUILD, name + ".prg")],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

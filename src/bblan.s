@@ -48,6 +48,11 @@ bb_tick:        .word   0               ; ticks since game start
 bb_seed:        .byte   $5A, $C3        ; PRNG seed applied at game start
 bb_minsp:       .byte   $FF             ; DETTEST: lowest SP seen in vframe
 
+.ifndef DETTEST
+.include "bbnet.s"
+.segment "BBLAN_CODE"
+.endif
+
 MAX_CATCHUP     = 4                     ; real frames we may run behind
 
 ; ============================================================================
@@ -71,6 +76,16 @@ bb_irq:
 bb_wait2:
         pla                             ; called with JSR; never return there
         pla
+.ifdef DETTEST                          ; test: real frames per pass
+        lda     bb_rframe
+        sec
+        sbc     det_rf
+        ldx     bb_rframe
+        stx     det_rf
+        and     #15
+        tax
+        inc     det_hist,x
+.endif
 @loop:  lda     ENDCHR
         cmp     D_0A5D
         beq     @adv
@@ -93,6 +108,35 @@ bb_sound_start:
         jsr     sound_update
         plp
         rts
+
+; ============================================================================
+; bb_boot_title - in place of the boot title's "jsr wait_one_frame": in a
+; session (and in DETTEST) skip the title, which waits for fire.
+; ============================================================================
+bb_boot_title:
+.ifndef DETTEST
+        lda     bb_hb+HB_DRIVER
+        bne     :+
+        jmp     wait_one_frame
+:
+.endif
+        pla                             ; leave the title loop
+        pla
+        jmp     L_45A1
+
+; ============================================================================
+; bb_title - in place of "jsr D_A5A0" at the title screen (D_F005). After a
+; session game (game over or quit) the session ends here.
+; ============================================================================
+bb_title:
+.ifndef DETTEST
+        lda     ls_on
+        beq     :+
+        lda     #END_GAMEOVER
+        jmp     bb_end
+:
+.endif
+        jmp     D_A5A0
 
 bb_sound_init:
         php
@@ -135,6 +179,22 @@ vframe:
         tax
 @jit:   dex
         bne     @jit
+  .if JITTER = 2
+        ; like a network wait: now and then stall 1-7 real frames
+        lda     CIA1_TALO
+        and     #$0F
+        bne     @nost
+        lda     CIA1_TALO
+        and     #$07
+        tax
+        beq     @nost
+@stall: lda     bb_rframe
+:       cmp     bb_rframe
+        beq     :-
+        dex
+        bne     @stall
+@nost:
+  .endif
 .endif
 
         ; --- pacing: one real frame per logical frame, catch up if behind
@@ -206,7 +266,22 @@ bb_sample:
 .ifdef DETTEST
         jmp     bot_input
 .else
-        lda     #$7F                    ; same reads as the original D_1CBD
+.ifndef NETBOT
+        lda     bb_hb+HB_DRIVER
+        beq     @local
+.endif
+        lda     ls_on
+        beq     @title
+        jmp     net_tick                ; in a session: lockstep
+@title: lda     #$7F                    ; session not started yet: the title
+        sta     bb_in0                  ; starts a 2-player game at once
+        lda     #$FF
+        sta     bb_in1
+        lda     #$F7                    ; key "2"
+        sta     bb_key
+        rts
+.ifndef NETBOT                          ; (test builds only play sessions)
+@local: lda     #$7F                    ; same reads as the original D_1CBD
         sta     CIA1_PRA
         ldx     #$FF
         stx     CIA1_PRB
@@ -216,6 +291,7 @@ bb_sample:
         sta     bb_in1
         sta     bb_key
         rts
+.endif
 .endif
 
 ; ============================================================================
@@ -241,6 +317,12 @@ bb_game_init:
 .ifdef START_LEVEL
         lda     #START_LEVEL - 2        ; test: title code increments it
         sta     SUBFLG
+.endif
+.ifndef DETTEST
+        lda     bb_hb+HB_DRIVER         ; session: seed etc. from the server
+        beq     :+
+        jsr     bb_net_start
+:
 .endif
         lda     bb_seed
         sta     RESHO
@@ -286,7 +368,7 @@ bb_game_inited:                         ; tools/startdiff.py breaks here
 ; ============================================================================
 .ifdef DETTEST
 
-.export det_n, det_lo, det_hi
+.export det_n, det_lo, det_hi, det_hist
 
 .ifndef BOT_SEED
 BOT_SEED        = $ACE1
@@ -300,6 +382,8 @@ det_n:          .byte   0
 det_lo:         .res    DET_MAX
 det_hi:         .res    DET_MAX
 det_s1:         .byte   0
+det_rf:         .byte   0
+det_hist:       .res    16              ; real frames per main loop pass
 det_games:      .byte   0               ; PREGAME: games started
 det_on:         .byte   0               ; logging started
 det_quit_hi:    .byte   0               ; PREGAME: quit at this tick/256

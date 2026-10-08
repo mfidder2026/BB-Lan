@@ -196,7 +196,11 @@ D_09DC:
 ; ============================================================================
 main_game_loop:
 L_0A07:
+.ifdef ORIGLAYOUT
+        jsr     ol_pass                         ; test: count main loop passes
+.else
         jsr     D_1844                          ; $0A07 - Update player input/movement
+.endif
 main_loop_entry:
 D_0A0A:
         jsr     D_7E80                          ; $0A0A - Check for SPACE (pause)
