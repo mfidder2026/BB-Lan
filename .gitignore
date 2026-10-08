@@ -16,3 +16,9 @@ src/*.o
 
 # macOS
 .DS_Store
+
+# Python
+__pycache__/
+
+# Screenshots from test runs
+build/*.png
