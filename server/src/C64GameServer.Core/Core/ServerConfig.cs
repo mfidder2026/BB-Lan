@@ -38,6 +38,9 @@ public sealed class ServerConfig
 
     public string LogFile { get; set; } = "server.log";
 
+    /// <summary>TCP port for C64s with a WiC64 (no UDP in its firmware); 0 = off.</summary>
+    public int TcpPort { get; set; } = 6466;
+
     /// <summary>
     /// Raw Ethernet clients (RR-Net in VICE): the network interface to capture on with pcap (Npcap on
     /// Windows, libpcap on Linux); empty = off. Run the server with --list-interfaces to see the names.

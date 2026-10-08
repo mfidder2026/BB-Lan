@@ -14,6 +14,23 @@ extern unsigned char uci_statlen;
 unsigned char uci_detect(void);
 unsigned char uci_exec(void);
 
+/* wic64.s */
+extern unsigned char wic_cmd, wic_outlen, wic_out[255], wic_in[512];
+extern unsigned int wic_inlen;
+unsigned char wic_exec(void);
+
+#define WIC_GET_IP    0x06
+#define WIC_TCP_OPEN  0x21
+#define WIC_TCP_READ  0x22
+#define WIC_TCP_WRITE 0x23
+#define WIC_TCP_CLOSE 0x2E
+#define WIC_ECHO      0xFE
+
+/* the TCP stream carries [length][message]; what is received but not yet
+   handed out waits here */
+static unsigned char stream[512];
+static unsigned int stream_len;
+
 /* rrnet.s */
 extern unsigned char rr_mymac[6], rr_dst[6], rr_from[6];
 extern unsigned char rr_txbuf[255], rr_txlen, rr_rxbuf[255], rr_rxlen;
@@ -51,6 +68,13 @@ static unsigned char uci(unsigned char cmd, unsigned char a)
     return uci_code();
 }
 
+static unsigned char wic(unsigned char cmd, unsigned char len)
+{
+    wic_cmd = cmd;
+    wic_outlen = len;
+    return wic_exec();
+}
+
 unsigned char net_init(unsigned char *mac, const char *server)
 {
     (void)server;
@@ -78,6 +102,16 @@ unsigned char net_init(unsigned char *mac, const char *server)
         strcpy(info, "rr-net");
         return drv;
     }
+    wic_out[0] = 0x42;
+    if (wic(WIC_ECHO, 1) == 0 && wic_inlen == 1 && wic_in[0] == 0x42) {
+        drv = DRV_WIC;
+        if (wic(WIC_GET_IP, 0) == 0 && wic_inlen < sizeof info) {
+            memcpy(info, wic_in, wic_inlen);
+            info[wic_inlen] = 0;
+        } else
+            strcpy(info, "?");
+        return drv;
+    }
     drv = DRV_NONE;
     return drv;
 }
@@ -91,6 +125,11 @@ unsigned char net_connect(const char *server, unsigned int port)
     if (drv == DRV_RR) {
         memcpy(rr_dst, broadcast, 6);          /* the HELLO finds the server */
         return 0;
+    }
+    if (drv == DRV_WIC) {
+        n = sprintf((char *)wic_out, "%s:%u", server, port + 1);
+        stream_len = 0;
+        return wic(WIC_TCP_OPEN, n) != 0;
     }
     if (drv != DRV_UCI) return 1;
     n = strlen(server);
@@ -112,6 +151,7 @@ void net_close_socket(unsigned char s)
 
 void net_disconnect(void)
 {
+    if (drv == DRV_WIC) wic(WIC_TCP_CLOSE, 0);
     net_close_socket(sock);
     sock = 0xFF;
 }
@@ -122,6 +162,10 @@ void net_send(const unsigned char *data, unsigned char len)
         memcpy(rr_txbuf, data, len);
         rr_txlen = len;
         rr_send();
+    } else if (drv == DRV_WIC) {
+        wic_out[0] = len;
+        memcpy(wic_out + 1, data, len);
+        wic(WIC_TCP_WRITE, len + 1);
     } else if (drv == DRV_UCI) {
         uci_cmd[0] = UCI_NET;
         uci_cmd[1] = UCI_WRITE;
@@ -148,6 +192,24 @@ unsigned char net_recv(unsigned char *buf)
         }
         memcpy(buf, rr_rxbuf, rr_rxlen);
         return rr_rxlen;
+    }
+    if (drv == DRV_WIC) {
+        unsigned char len;
+        if (stream_len == 0 || stream_len < 1u + stream[0]) {
+            /* no complete message waiting: fetch what has arrived */
+            if (wic(WIC_TCP_READ, 0) == 0 && wic_inlen) {
+                n = wic_inlen;
+                if (n > sizeof stream - stream_len) n = sizeof stream - stream_len;
+                memcpy(stream + stream_len, wic_in, n);
+                stream_len += n;
+            }
+        }
+        if (stream_len == 0 || stream_len < 1u + stream[0]) return 0;
+        len = stream[0];
+        memcpy(buf, stream + 1, len);
+        stream_len -= 1 + len;
+        memmove(stream, stream + 1 + len, stream_len);
+        return len;
     }
     if (drv == DRV_UCI && sock != 0xFF) {
         uci_cmd[0] = UCI_NET;

@@ -106,8 +106,19 @@ internal static class Program
             }
         }
         using var pcapDispose = pcap;
-        var core = new ServerCore(config, new MuxTransport(transport, pcap), games, log, DateTime.UtcNow);
-        var host = new ServerHost(core, transport, pcap);
+        TcpTransport? tcp = null;
+        if (config.TcpPort > 0)
+        {
+            try { tcp = new TcpTransport(config.TcpPort); }
+            catch (SocketException e)
+            {
+                Console.Error.WriteLine($"TCP port {config.TcpPort} cannot be used ({e.Message}).");
+                return 1;
+            }
+        }
+        using var tcpDispose = tcp;
+        var core = new ServerCore(config, new MuxTransport(transport, pcap, tcp), games, log, DateTime.UtcNow);
+        var host = new ServerHost(core, transport, pcap, tcp);
 
         PrintBanner(config, games);
         using var cts = new CancellationTokenSource();
@@ -158,6 +169,8 @@ internal static class Program
         Console.WriteLine($" C64s connect to UDP port {config.GamePort} on:");
         foreach (var ip in LocalAddresses())
             Console.WriteLine($"     {ip}");
+        if (config.TcpPort > 0)
+            Console.WriteLine($" WiC64 (TCP) on port {config.TcpPort}");
         if (!string.IsNullOrWhiteSpace(config.PcapInterface))
             Console.WriteLine($" Raw Ethernet (VICE RR-Net) on {config.PcapInterface}, MAC {config.PcapMac}");
         Console.WriteLine($" Dashboard: http://localhost:{config.DashboardPort}/");
@@ -176,7 +189,8 @@ internal static class Program
 }
 
 /// <summary>Runs the core on one logical thread: datagrams and a 20 ms tick, all under one lock (the dashboard reads under it too).</summary>
-internal sealed class ServerHost(ServerCore core, UdpTransport transport, PcapTransport? pcap = null)
+internal sealed class ServerHost(ServerCore core, UdpTransport transport, PcapTransport? pcap = null,
+    TcpTransport? tcp = null)
 {
     public ServerCore Core => core;
     public UdpTransport Transport => transport;
@@ -188,6 +202,7 @@ internal sealed class ServerHost(ServerCore core, UdpTransport transport, PcapTr
         var channel = Channel.CreateUnbounded<(IPEndPoint, byte[])>();
         var receiver = transport.ReceiveLoop(channel.Writer, ct);
         var rawReceiver = pcap?.ReceiveLoop(channel.Writer, ct) ?? Task.CompletedTask;
+        var tcpReceiver = tcp?.AcceptLoop(channel.Writer, ct) ?? Task.CompletedTask;
         var nextTick = DateTime.UtcNow;
         while (!ct.IsCancellationRequested)
         {
@@ -212,5 +227,6 @@ internal sealed class ServerHost(ServerCore core, UdpTransport transport, PcapTr
         }
         await receiver;
         await rawReceiver;
+        await tcpReceiver;
     }
 }

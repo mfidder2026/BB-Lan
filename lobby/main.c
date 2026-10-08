@@ -302,6 +302,12 @@ static void take_players(void)
     if (sel >= nplayers) sel = nplayers ? nplayers - 1 : 0;
 }
 
+/* the game file for this network hardware */
+static const char *game_file(void)
+{
+    return drv == DRV_UCI ? "bbu" : drv == DRV_WIC ? "bbw" : "bbr";
+}
+
 /* START: write the handoff block and load the game */
 static void start_session(void)
 {
@@ -326,7 +332,7 @@ static void start_session(void)
     cfg_save();
     title();
     cprintf("You play %s.\r\n\r\nLoading the game...", slot ? "BOB (blue)" : "BUB (green)");
-    start_game(drv == DRV_UCI ? "bbu" : "bbr");
+    start_game(game_file());
 }
 
 static void lobby(void)
@@ -487,10 +493,11 @@ int main(void)
         switch (drv) {
         case DRV_UCI: cprintf("Network: Ultimate, IP %s\r\n", net_info()); break;
         case DRV_RR:  cputs("Network: RR-Net (VICE)\r\n"); break;
+        case DRV_WIC: cprintf("Network: WiC64, IP %s\r\n", net_info()); break;
         default:      cputs("Network: none found\r\n"); break;
         }
         cputs("Name:    "); put_nick(*nick ? nick : "-", 0); cputs("\r\n");
-        if (drv == DRV_UCI) cprintf("Server:  %s\r\n", *server ? server : "-");
+        if (drv == DRV_UCI || drv == DRV_WIC) cprintf("Server:  %s\r\n", *server ? server : "-");
         if (came_back && reason && reason < 7) {
             textcolor(COLOR_YELLOW);
             cprintf("\r\nLast game: %s\r\n", end_text[reason]);
@@ -504,11 +511,11 @@ int main(void)
         else key = cgetc();
         came_back = 0;
 
-        if (key == 's') { settings(drv == DRV_UCI); cfg_save(); continue; }
-        if (key == 'l') { memset(HB, 0, HB_SIZE); start_game(drv == DRV_UCI ? "bbu" : "bbr"); }
+        if (key == 's') { settings(drv == DRV_UCI || drv == DRV_WIC); cfg_save(); continue; }
+        if (key == 'l') { memset(HB, 0, HB_SIZE); start_game(game_file()); }
         if (key != '\r' && key != CH_F1) continue;
         if (drv == DRV_NONE || PEEK(0x02A6) == 0) continue;
-        if (!*nick || (drv == DRV_UCI && !*server)) { settings(drv == DRV_UCI); cfg_save(); }
+        if (!*nick || ((drv == DRV_UCI || drv == DRV_WIC) && !*server)) { settings(drv == DRV_UCI || drv == DRV_WIC); cfg_save(); }
         if (net_connect(server, SERVER_PORT)) {
             status("Cannot open a connection to the server.");
             sleep(3);

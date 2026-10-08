@@ -2,7 +2,10 @@
 """End-to-end LAN test: the game server (raw Ethernet via pcap) and two VICEs
 with RR-Net, each with its own copy of the test disk.
 
-    python tools/nettest.py [seconds] [--no-build] [--iface NAME] [--warp] [--dump N]
+    python tools/nettest.py [seconds] [--no-build] [--iface NAME] [--warp] [--dump N] [--wic64]
+
+--wic64: the C64s use VICE's WiC64 emulation (TCP to 127.0.0.1:6466)
+instead of RR-Net.
 
 --dump N: after N polls save the RAM of both C64s (build/dump_a.bin, dump_b.bin);
 use with a test disk built with -D HALT_AT=tick to compare them at one tick.
@@ -38,12 +41,13 @@ def arg(name, default=None):
     return default
 
 
-def make_disk(tag, nick, auto, mac):
+def make_disk(tag, nick, auto, mac, server=""):
     disk = os.path.join(BUILD, f"net_{tag}.d64")
     shutil.copy(os.path.join(BUILD, "bblan-test.d64"), disk)
     cfg = os.path.join(BUILD, f"net_{tag}.cfg")
     with open(cfg, "wb") as f:      # PETSCII upper case = ASCII upper case
-        f.write(f"NAME={nick}\rMAC={mac}\rAUTO={auto}\rBOT=1\r".encode())
+        f.write(f"NAME={nick}\rMAC={mac}\rAUTO={auto}\rBOT=1\r".encode()
+                + (f"SERVER={server}\r".encode() if server else b""))
     subprocess.run([C1541, "-attach", disk, "-write", cfg, "bblan.cfg,s"],
                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return disk
@@ -83,12 +87,14 @@ def main():
     vices = []
     try:
         time.sleep(3)
+        wic = "--wic64" in sys.argv
         for tag, nick, auto, mac, port in PLAYERS:
-            disk = make_disk(tag, nick, auto, mac)
+            disk = make_disk(tag, nick, auto, mac, "127.0.0.1" if wic else "")
+            hw = (["-userportdevice", "23"] if wic else
+                  ["-ethernetcart", "-ethernetcartmode", "1", "-ethernetioif", iface])
             vices.append(subprocess.Popen(
                 [VICE, "-default", "-minimized", "-pal", "-sounddev", "dummy", "+drive8truedrive", "-virtualdev8",
-                 *(["-warp"] if "--warp" in sys.argv else []),
-                 "-ethernetcart", "-ethernetcartmode", "1", "-ethernetioif", iface,
+                 *(["-warp"] if "--warp" in sys.argv else []), *hw,
                  "-remotemonitor", "-remotemonitoraddress", f"ip4://127.0.0.1:{port}",
                  "-autostart", disk], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
             time.sleep(4)   # VICE instances started together miss their monitor port

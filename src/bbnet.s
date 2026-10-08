@@ -21,6 +21,8 @@
 ; One driver is assembled in (a game file per hardware type):
 ;   NET_UCI   Ultimate 64 / C64 Ultimate: UDP through the Ultimate Command
 ;             Interface (socket opened by the lobby)
+;   NET_WIC   WiC64: TCP to the server's port 6466 (connection opened by
+;             the lobby), the stream carries [length][message]
 ;   NET_RR    RR-Net / CS8900a (VICE): raw Ethernet frames, EtherType $88B5,
 ;             to the server's pcap interface: server MAC, our MAC, $88B5,
 ;             message length, message. No IP, so no ARP or IP set-up.
@@ -47,6 +49,7 @@ HB_SIZE         = 24
 DRV_LOCAL       = 0
 DRV_UCI         = 1
 DRV_RR          = 2
+DRV_WIC         = 3
 HBF_BOT         = $01
 
 ; reasons, passed back to the lobby at $033C ("BR", reason, socket);
@@ -341,6 +344,7 @@ CK_RANGES       = * - ck_len
 net_poll:
         jsr     drv_poll                ; C=0: message at RX_DATA, A = length
         bcs     rx_done
+net_msg:                                ; (the WiC64 driver calls this itself)
         ldx     RX_DATA                 ; (PINGs are not answered in a game:
         ldy     RX_DATA+1               ; the server only uses them to show
                                         ; the ping time)
@@ -357,7 +361,12 @@ rx_done:
         cpx     #MSG_SESSION_END
         bne     rx_done
 :       tya
+.ifdef NET_WIC
+        sta     wic_end                 ; not in the middle of a WiC64 transfer
+        rts
+.else
         jmp     bb_end
+.endif
 
 rx_input:
         cmp     #INPUT_LEN
@@ -731,7 +740,140 @@ drv_poll:
         rts
 .endif ; NET_RR
 
-.if .not (.defined(NET_UCI) .or .defined(NET_RR))
+.ifdef NET_WIC
+; ----------------------------------------------------------------------------
+; WiC64 (firmware 2.x) on the userport. Request: "R", command, length (16),
+; payload; answer: status, length (16), payload. Every byte is confirmed with
+; FLAG2 ($DD0D bit 4); PA2 high = C64 sends, low = C64 receives. The TCP
+; connection was opened by the lobby. Messages in the stream are handed to
+; net_msg as they complete (several can arrive at once).
+; ----------------------------------------------------------------------------
+WIC_TCP_READ    = $22
+WIC_TCP_WRITE   = $23
+MB_MAX          = INPUT_LEN
+
+wic_mbuf:       .res    MB_MAX          ; the message being received
+RX_DATA         = wic_mbuf
+wic_need:       .byte   0               ; bytes still missing of it
+wic_pos:        .byte   0
+wic_len:        .byte   0
+wic_left:       .word   0
+wic_end:        .byte   0               ; a session end, handled after the read
+
+drv_init:
+        lda     $DD02                   ; PA2 is an output
+        ora     #$04
+        sta     $DD02
+        lda     #0
+        sta     wic_need
+        sta     wic_end
+drv_flush:
+        rts
+
+wic_out:                                ; send A, wait for the handshake
+        sta     $DD01
+wic_wait:
+        lda     #$10
+:       bit     $DD0D
+        beq     :-
+        rts
+
+wic_in:
+        jsr     wic_wait
+        lda     $DD01
+        rts
+
+wic_head:                               ; A = command, X = payload length
+        pha
+        lda     $DD00                   ; PA2 high: we send
+        ora     #$04
+        sta     $DD00
+        lda     #$FF
+        sta     $DD03
+        lda     #$52                    ; "R"
+        jsr     wic_out
+        pla
+        jsr     wic_out
+        txa
+        jsr     wic_out
+        lda     #0
+        jmp     wic_out
+
+wic_turn:                               ; to receiving; wic_left = answer length
+        lda     #0
+        sta     $DD03
+        lda     $DD00
+        and     #$FB
+        sta     $DD00
+        jsr     wic_wait
+        lda     $DD01
+        jsr     wic_in                  ; status (not needed: a closed
+        jsr     wic_in                  ; connection just brings nothing)
+        sta     wic_left
+        jsr     wic_in
+        sta     wic_left+1
+        rts
+
+drv_send:                               ; A = length, X/Y = data
+        stx     @src+1
+        sty     @src+2
+        sta     wic_len
+        tax
+        inx                             ; [length][message]
+        lda     #WIC_TCP_WRITE
+        jsr     wic_head
+        lda     wic_len
+        jsr     wic_out
+        ldx     #0
+@src:   lda     $FFFF,x
+        jsr     wic_out
+        inx
+        cpx     wic_len
+        bne     @src
+        jsr     wic_turn                ; the answer has no payload
+        lda     $DD0D
+        rts
+
+drv_poll:
+        lda     #WIC_TCP_READ
+        ldx     #0
+        jsr     wic_head
+        jsr     wic_turn
+@byte:  lda     wic_left                ; all of it, a message at a time
+        ora     wic_left+1
+        beq     @done
+        lda     wic_left
+        bne     :+
+        dec     wic_left+1
+:       dec     wic_left
+        jsr     wic_in
+        ldx     wic_need
+        bne     @data
+        sta     wic_need                ; a length byte starts a message
+        sta     wic_len
+        stx     wic_pos
+        beq     @byte
+@data:  ldx     wic_pos
+        cpx     #MB_MAX
+        bcs     :+                      ; (longer messages are not for the game)
+        sta     wic_mbuf,x
+:       inc     wic_pos
+        dec     wic_need
+        bne     @byte
+        lda     wic_len
+        cmp     #MB_MAX+1
+        bcs     @byte
+        jsr     net_msg
+        jmp     @byte
+@done:  lda     $DD0D
+        lda     wic_end
+        beq     :+
+        jmp     bb_end
+:       sec
+        rts
+.endif ; NET_WIC
+
+.if .not (.defined(NET_UCI) .or .defined(NET_RR) .or .defined(NET_WIC))
 RX_DATA         = tx_buf
 drv_init:
 drv_flush:

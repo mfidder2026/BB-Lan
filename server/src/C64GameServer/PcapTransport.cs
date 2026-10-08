@@ -211,12 +211,13 @@ internal sealed class PcapTransport : IDisposable
     }
 }
 
-/// <summary>Sends to UDP clients through the socket and to raw Ethernet clients through pcap.</summary>
-internal sealed class MuxTransport(UdpTransport udp, PcapTransport? pcap) : ITransport
+/// <summary>Sends to each client over the transport it came in on: UDP, raw Ethernet (pcap) or TCP.</summary>
+internal sealed class MuxTransport(UdpTransport udp, PcapTransport? pcap, TcpTransport? tcp) : ITransport
 {
     public void Send(IPEndPoint to, ReadOnlySpan<byte> message)
     {
         if (pcap != null && PcapTransport.IsRaw(to)) pcap.Send(to, message);
+        else if (tcp != null && TcpTransport.IsTcp(to)) tcp.Send(to, message);
         else udp.Send(to, message);
     }
 }

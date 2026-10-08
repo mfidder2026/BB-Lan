@@ -253,7 +253,7 @@ def lobby():
     """The lobby program (C, cc65): build/lobby.prg"""
     cl65 = find_tool("cl65")
     src = os.path.join(ROOT, "lobby")
-    files = [os.path.join(src, f) for f in ("main.c", "net.c", "rrnet.s", "uci.s", "loader.s")]
+    files = [os.path.join(src, f) for f in ("main.c", "net.c", "rrnet.s", "uci.s", "wic64.s", "loader.s")]
     run([cl65, "-t", "c64", "-O", "-o", "lobby.prg", "-m", "lobby.map", *files])
     size = os.path.getsize(os.path.join(BUILD, "lobby.prg"))
     if 0x0801 + size > 0xC5F2:                  # the game's bb_end runs from $C5F2+
@@ -323,8 +323,9 @@ def main():
         lobby()
         game("bbr", ["NET_RR=1", *extra, *a.defs])
         game("bbu", ["NET_UCI=1", *extra, *a.defs])
+        game("bbw", ["NET_WIC=1", *extra, *a.defs])
         d64("bblan.d64" if a.target == "disk" else "bblan-test.d64",
-            [("lobby.prg", "bblan"), ("bbr.prg", "bbr"), ("bbu.prg", "bbu")])
+            [("lobby.prg", "bblan"), ("bbr.prg", "bbr"), ("bbu.prg", "bbu"), ("bbw.prg", "bbw")])
         return
     build(True, a.defs, a.name + "-raw.prg")
     shutil.copy(os.path.join(BUILD, LBLFILE), os.path.join(BUILD, a.name + ".lbl"))
